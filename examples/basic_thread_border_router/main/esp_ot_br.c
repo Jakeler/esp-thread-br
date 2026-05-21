@@ -68,8 +68,8 @@ void app_main(void)
     // * TREL reception (The Thread Radio Encapsulation Link needs an eventfd for reception.)
     max_eventfd++;
 #endif
-#if CONFIG_OPENTHREAD_BORDER_ROUTER
-    // * discovery delegate (The discovery delegate needs an eventfd for border router)
+#if CONFIG_OPENTHREAD_RADIO_NATIVE
+    // * Radio process (The native thread 15.4 radio needs an eventfd.)
     max_eventfd++;
 #endif
     esp_vfs_eventfd_config_t eventfd_config = {
