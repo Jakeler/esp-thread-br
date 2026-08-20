@@ -42,6 +42,13 @@ static void led_indicator_color_to_pixel(uint32_t color, uint8_t *r, uint8_t *g,
     *r = (color >> 16) & 0xFF;
     *g = (color >> 8) & 0xFF;
     *b = color & 0xFF;
+
+#if CONFIG_BR_LED_BRIGHTNESS < 255
+    float scale = (float)CONFIG_BR_LED_BRIGHTNESS / 255.0f;
+    *r = (uint8_t)(*r * scale);
+    *g = (uint8_t)(*g * scale);
+    *b = (uint8_t)(*b * scale);
+#endif
 }
 
 esp_err_t led_indicator_init(void)

@@ -138,6 +138,14 @@ menu "ESP Thread Border Router Example"
             depends on BR_LED_ENABLED
             help
                 Type of LED used (e.g., WS2812, SK6812).
+
+        config BR_LED_BRIGHTNESS
+            int "LED brightness"
+            default 64
+            range 0 255
+            depends on BR_LED_ENABLED
+            help
+                Global brightness multiplier for the LED (0-255).
     endmenu
 
 endmenu
