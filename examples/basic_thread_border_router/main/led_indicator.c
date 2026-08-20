@@ -133,6 +133,18 @@ esp_err_t led_indicator_set_role(otDeviceRole role)
     return led_indicator_set_color(led_indicator_role_to_color(role));
 }
 
+bool led_indicator_has_peers(otInstance *instance)
+{
+    otNeighborInfoIterator iterator = OT_NEIGHBOR_INFO_ITERATOR_INIT;
+    otNeighborInfo neighbor_info;
+    while (otThreadGetNextNeighborInfo(instance, &iterator, &neighbor_info) == OT_ERROR_NONE) {
+        if (neighbor_info.mIsChild || neighbor_info.mFullThreadDevice) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void led_indicator_deinit(void)
 {
     if (s_led_chan) {

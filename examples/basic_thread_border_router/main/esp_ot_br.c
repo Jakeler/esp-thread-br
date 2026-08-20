@@ -46,11 +46,14 @@ static void led_indicator_task(void *pvParameters)
     while (1) {
         esp_openthread_lock_acquire(portMAX_DELAY);
         otDeviceRole current_role = otThreadGetDeviceRole(esp_openthread_get_instance());
+        bool has_peers = led_indicator_has_peers(esp_openthread_get_instance());
         esp_openthread_lock_release();
 
-        if (current_role != last_role) {
-            led_indicator_set_role(current_role);
-            last_role = current_role;
+        otDeviceRole effective_role = has_peers ? current_role : OT_DEVICE_ROLE_DETACHED;
+
+        if (effective_role != last_role) {
+            led_indicator_set_role(effective_role);
+            last_role = effective_role;
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));
