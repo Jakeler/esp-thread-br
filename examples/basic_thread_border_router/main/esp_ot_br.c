@@ -29,8 +29,33 @@
 
 #include "border_router_launch.h"
 #include "esp_br_web.h"
+#include "led_indicator.h"
 
 #define TAG "esp_ot_br"
+
+#if CONFIG_BR_LED_ENABLED
+static void led_indicator_task(void *pvParameters)
+{
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    ESP_ERROR_CHECK(led_indicator_init());
+
+    otDeviceRole last_role = OT_DEVICE_ROLE_DISABLED;
+
+    while (1) {
+        esp_openthread_lock_acquire(portMAX_DELAY);
+        otDeviceRole current_role = otThreadGetDeviceRole(esp_openthread_get_instance());
+        esp_openthread_lock_release();
+
+        if (current_role != last_role) {
+            led_indicator_set_role(current_role);
+            last_role = current_role;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+#endif
 
 extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
@@ -105,4 +130,8 @@ void app_main(void)
 #endif
 
     launch_openthread_border_router(&openthread_config, &rcp_update_config);
+
+#if CONFIG_BR_LED_ENABLED
+    xTaskCreate(led_indicator_task, "led_indicator", 2048, NULL, 3, NULL);
+#endif
 }

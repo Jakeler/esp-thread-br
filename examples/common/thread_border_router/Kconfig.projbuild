@@ -118,4 +118,26 @@ menu "ESP Thread Border Router Example"
             credentials are found or WiFi connection fails. Users can connect to the AP and
             configure Wi-Fi via a web interface at http://192.168.4.1.
 
+    menu "LED Indicator Configuration"
+        config BR_LED_ENABLED
+            bool "Enable LED indicator for Thread role"
+            default n
+            help
+                If enabled, a NeoPixel/WS2812 LED will indicate the Thread device role.
+
+        config BR_LED_GPIO
+            int "LED GPIO pin"
+            default 8
+            depends on BR_LED_ENABLED
+            help
+                GPIO pin connected to the NeoPixel/WS2812 LED data line.
+
+        config BR_LED_TYPE
+            string "LED type"
+            default "WS2812"
+            depends on BR_LED_ENABLED
+            help
+                Type of LED used (e.g., WS2812, SK6812).
+    endmenu
+
 endmenu
