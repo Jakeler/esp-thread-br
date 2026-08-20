@@ -52,6 +52,8 @@ static void led_indicator_task(void *pvParameters)
         otDeviceRole effective_role = has_peers ? current_role : OT_DEVICE_ROLE_DETACHED;
 
         if (effective_role != last_role) {
+            ESP_LOGI(TAG, "LED role: current=%d, has_peers=%d, effective=%d, last=%d",
+                     current_role, has_peers, effective_role, last_role);
             led_indicator_set_role(effective_role);
             last_role = effective_role;
         }

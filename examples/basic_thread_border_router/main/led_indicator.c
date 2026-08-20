@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "openthread/link.h"
+#include "openthread/thread_ftd.h"
 
 static const char *TAG = "led_indicator";
 
@@ -136,18 +137,39 @@ esp_err_t led_indicator_set_role(otDeviceRole role)
 
 bool led_indicator_has_peers(otInstance *instance)
 {
-    otNeighborInfoIterator iterator = OT_NEIGHBOR_INFO_ITERATOR_INIT;
-    otNeighborInfo neighbor_info;
-    const otExtAddress *self_addr = otLinkGetExtendedAddress(instance);
+    otDeviceRole role = otThreadGetDeviceRole(instance);
 
-    while (otThreadGetNextNeighborInfo(instance, &iterator, &neighbor_info) == OT_ERROR_NONE) {
-        if (memcmp(&neighbor_info.mExtAddress, self_addr, sizeof(otExtAddress)) == 0) {
-            continue;
+    if (role == OT_DEVICE_ROLE_CHILD) {
+        otRouterInfo parent_info;
+        if (otThreadGetParentInfo(instance, &parent_info) == OT_ERROR_NONE) {
+            ESP_LOGD(TAG, "Child has parent (rloc16=0x%x)", parent_info.mRloc16);
+            return true;
         }
-        if (neighbor_info.mIsChild || neighbor_info.mFullThreadDevice) {
+        ESP_LOGD(TAG, "Child has NO parent");
+        return false;
+    }
+
+    if (role == OT_DEVICE_ROLE_ROUTER || role == OT_DEVICE_ROLE_LEADER) {
+        uint8_t max_router_id = otThreadGetMaxRouterId(instance);
+        otRouterInfo router_info;
+        int router_count = 0;
+        uint16_t self_rloc16 = otThreadGetRloc16(instance);
+
+        for (uint8_t i = 0; i <= max_router_id; i++) {
+            if (otThreadGetRouterInfo(instance, i, &router_info) != OT_ERROR_NONE) {
+                continue;
+            }
+            if (router_info.mRloc16 != self_rloc16) {
+                router_count++;
+            }
+        }
+
+        ESP_LOGD(TAG, "Router/Leader: max_router_id=%d, other_routers=%d", max_router_id, router_count);
+        if (router_count > 0) {
             return true;
         }
     }
+
     return false;
 }
 
