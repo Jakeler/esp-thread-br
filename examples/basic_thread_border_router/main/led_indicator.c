@@ -1,3 +1,5 @@
+#include "sdkconfig.h"
+
 #if CONFIG_BR_LED_ENABLED
 #include "led_indicator.h"
 
