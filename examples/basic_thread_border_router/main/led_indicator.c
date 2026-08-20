@@ -9,6 +9,7 @@
 #include "driver/rmt_tx.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "openthread/link.h"
 
 static const char *TAG = "led_indicator";
 
@@ -137,7 +138,12 @@ bool led_indicator_has_peers(otInstance *instance)
 {
     otNeighborInfoIterator iterator = OT_NEIGHBOR_INFO_ITERATOR_INIT;
     otNeighborInfo neighbor_info;
+    const otExtAddress *self_addr = otLinkGetExtendedAddress(instance);
+
     while (otThreadGetNextNeighborInfo(instance, &iterator, &neighbor_info) == OT_ERROR_NONE) {
+        if (memcmp(&neighbor_info.mExtAddress, self_addr, sizeof(otExtAddress)) == 0) {
+            continue;
+        }
         if (neighbor_info.mIsChild || neighbor_info.mFullThreadDevice) {
             return true;
         }
