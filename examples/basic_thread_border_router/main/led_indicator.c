@@ -1,14 +1,21 @@
+#if CONFIG_BR_LED_ENABLED
 #include "led_indicator.h"
 
 #include "esp_check.h"
 #include "esp_log.h"
-#include "driver/led_strip.h"
+#include "driver/rmt_encoder.h"
+#include "driver/rmt_tx.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char *TAG = "led_indicator";
 
-static led_strip_handle_t s_led_strip = NULL;
+#define LED_STRIP_RESOLUTION_HZ 10000000 // 10MHz
+
+static rmt_channel_handle_t s_led_chan = NULL;
+static rmt_encoder_handle_t s_bytes_encoder = NULL;
+static rmt_encoder_handle_t s_copy_encoder = NULL;
+static uint8_t s_pixel[3];
 
 static uint32_t led_indicator_role_to_color(otDeviceRole role)
 {
@@ -28,39 +35,86 @@ static uint32_t led_indicator_role_to_color(otDeviceRole role)
     }
 }
 
+static void led_indicator_color_to_pixel(uint32_t color, uint8_t *r, uint8_t *g, uint8_t *b)
+{
+    *r = (color >> 16) & 0xFF;
+    *g = (color >> 8) & 0xFF;
+    *b = color & 0xFF;
+}
+
 esp_err_t led_indicator_init(void)
 {
     ESP_LOGI(TAG, "Initializing LED indicator on GPIO %d", CONFIG_BR_LED_GPIO);
 
-    led_strip_config_t strip_config = {
-        .strip_gpio_num = CONFIG_BR_LED_GPIO,
-        .max_leds = 1,
-    };
-
-    led_strip_rmt_config_t rmt_config = {
+    rmt_tx_channel_config_t tx_chan_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = 10 * 1000 * 1000,
-        .flags.with_dma = false,
+        .gpio_num = CONFIG_BR_LED_GPIO,
+        .mem_block_symbols = 64,
+        .resolution_hz = LED_STRIP_RESOLUTION_HZ,
+        .trans_queue_depth = 4,
     };
+    ESP_RETURN_ON_ERROR(rmt_new_tx_channel(&tx_chan_config, &s_led_chan), TAG,
+                        "Failed to create RMT TX channel");
 
-    ESP_RETURN_ON_ERROR(led_strip_new_rmt_device(&strip_config, &rmt_config, &s_led_strip), TAG,
-                        "Failed to create LED strip");
+    rmt_bytes_encoder_config_t bytes_encoder_config = {
+        .bit0 =
+            {
+                .level0 = 1,
+                .duration0 = 0.3 * LED_STRIP_RESOLUTION_HZ / 1000000,
+                .level1 = 0,
+                .duration1 = 0.9 * LED_STRIP_RESOLUTION_HZ / 1000000,
+            },
+        .bit1 =
+            {
+                .level0 = 1,
+                .duration0 = 0.9 * LED_STRIP_RESOLUTION_HZ / 1000000,
+                .level1 = 0,
+                .duration1 = 0.3 * LED_STRIP_RESOLUTION_HZ / 1000000,
+            },
+        .flags.msb_first = 1,
+    };
+    ESP_RETURN_ON_ERROR(rmt_new_bytes_encoder(&bytes_encoder_config, &s_bytes_encoder), TAG,
+                        "Failed to create bytes encoder");
 
-    ESP_RETURN_ON_ERROR(led_strip_clear(s_led_strip), TAG, "Failed to clear LED strip");
+    rmt_copy_encoder_config_t copy_encoder_config = {};
+    ESP_RETURN_ON_ERROR(rmt_new_copy_encoder(&copy_encoder_config, &s_copy_encoder), TAG,
+                        "Failed to create copy encoder");
+
+    ESP_ERROR_CHECK(rmt_enable(s_led_chan));
 
     return ESP_OK;
 }
 
 esp_err_t led_indicator_set_color(uint32_t color)
 {
-    ESP_RETURN_ON_FALSE(s_led_strip, ESP_ERR_INVALID_STATE, TAG, "LED strip not initialized");
+    ESP_RETURN_ON_FALSE(s_led_chan && s_bytes_encoder && s_copy_encoder, ESP_ERR_INVALID_STATE, TAG,
+                        "LED strip not initialized");
 
-    uint8_t r = (color >> 16) & 0xFF;
-    uint8_t g = (color >> 8) & 0xFF;
-    uint8_t b = color & 0xFF;
+    uint8_t r, g, b;
+    led_indicator_color_to_pixel(color, &r, &g, &b);
 
-    ESP_RETURN_ON_ERROR(led_strip_set_pixel(s_led_strip, 0, r, g, b), TAG, "Failed to set LED color");
-    ESP_RETURN_ON_ERROR(led_strip_refresh(s_led_strip), TAG, "Failed to refresh LED strip");
+    s_pixel[0] = g;
+    s_pixel[1] = r;
+    s_pixel[2] = b;
+
+    rmt_transmit_config_t tx_config = {
+        .loop_count = 0,
+    };
+
+    ESP_RETURN_ON_ERROR(rmt_transmit(s_led_chan, s_bytes_encoder, s_pixel, sizeof(s_pixel), &tx_config), TAG,
+                        "Failed to transmit pixel data");
+
+    rmt_symbol_word_t reset_code = {
+        .level0 = 0,
+        .duration0 = LED_STRIP_RESOLUTION_HZ / 1000000 * 50 / 2,
+        .level1 = 0,
+        .duration1 = LED_STRIP_RESOLUTION_HZ / 1000000 * 50 / 2,
+    };
+    ESP_RETURN_ON_ERROR(rmt_transmit(s_led_chan, s_copy_encoder, &reset_code, sizeof(reset_code), &tx_config), TAG,
+                        "Failed to transmit reset code");
+
+    ESP_RETURN_ON_ERROR(rmt_tx_wait_all_done(s_led_chan, portMAX_DELAY), TAG,
+                        "Failed to wait for TX done");
 
     return ESP_OK;
 }
@@ -72,9 +126,18 @@ esp_err_t led_indicator_set_role(otDeviceRole role)
 
 void led_indicator_deinit(void)
 {
-    if (s_led_strip) {
-        led_strip_clear(s_led_strip);
-        led_strip_del(s_led_strip);
-        s_led_strip = NULL;
+    if (s_led_chan) {
+        rmt_disable(s_led_chan);
+        rmt_del_channel(s_led_chan);
+        s_led_chan = NULL;
+    }
+    if (s_bytes_encoder) {
+        rmt_del_encoder(s_bytes_encoder);
+        s_bytes_encoder = NULL;
+    }
+    if (s_copy_encoder) {
+        rmt_del_encoder(s_copy_encoder);
+        s_copy_encoder = NULL;
     }
 }
+#endif
